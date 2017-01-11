@@ -10,7 +10,7 @@ A is locked by X, which is waiting for Y
 
 Ways to avoid having deadlocks are:
 
-avoid having locks (if possible),
+avoid having locks (if possible)
 avoid having more than one lock
 always take the locks in the same order.
 
