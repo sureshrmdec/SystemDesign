@@ -1,4 +1,4 @@
-
+Deadlock
 Resource A and resource B are used by process X and process Y
 
 X starts to use A.
@@ -56,6 +56,139 @@ public class TestThread {
       }
    } 
 }
+
+public class BankAccount {
+    double balance;
+    int id;
+     
+    BankAccount(int id, double balance) {
+        this.id = id;
+        this.balance = balance;
+    }
+     
+    void withdraw(double amount) {
+        // Wait to simulate io like database access ...
+        try {Thread.sleep(10l);} catch (InterruptedException e) {}
+        balance -= amount;
+    }
+     
+    void deposit(double amount) {
+        // Wait to simulate io like database access ...
+        try {Thread.sleep(10l);} catch (InterruptedException e) {}
+        balance += amount;
+    }
+     
+    static void transfer(BankAccount from, BankAccount to, double amount) {
+        synchronized(from) {
+            from.withdraw(amount);
+            synchronized(to) {
+                to.deposit(amount);
+            }
+        }
+    }
+     
+    public static void main(String[] args) {
+        final BankAccount fooAccount = new BankAccount(1, 100d);
+        final BankAccount barAccount = new BankAccount(2, 100d);
+         
+        new Thread() {
+            public void run() {
+                BankAccount.transfer(fooAccount, barAccount, 10d);
+            }
+        }.start();
+         
+        new Thread() {
+            public void run() {
+                BankAccount.transfer(barAccount, fooAccount, 10d);
+            }
+        }.start();
+         
+    }
+}
+
+```
+
+
+Livelock
+
+A thread often acts in response to the action of another thread. If the other thread's action is also a response to the action of another thread, then livelock may result. As with deadlock, livelocked threads are unable to make further progress. However, the threads are not blocked — they are simply too busy responding to each other to resume work. This is comparable to two people attempting to pass each other in a corridor: Alphonse moves to his left to let Gaston pass, while Gaston moves to his right to let Alphonse pass. Seeing that they are still blocking each other, Alphone moves to his right, while Gaston moves to his left. They're still blocking each other, so...
+
+
+```java
+
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+ 
+public class BankAccount {
+    double balance;
+    int id;
+    Lock lock = new ReentrantLock();
+ 
+    BankAccount(int id, double balance) {
+        this.id = id;
+        this.balance = balance;
+    }
+ 
+    boolean withdraw(double amount) {
+        if (this.lock.tryLock()) {
+            // Wait to simulate io like database access ...
+            try {Thread.sleep(10l);} catch (InterruptedException e) {}
+            balance -= amount;
+            return true;
+        }
+        return false;
+    }
+ 
+    boolean deposit(double amount) {
+        if (this.lock.tryLock()) {
+            // Wait to simulate io like database access ...
+            try {Thread.sleep(10l);} catch (InterruptedException e) {}
+            balance += amount;
+            return true;
+        }
+        return false;
+    }
+ 
+    public boolean tryTransfer(BankAccount destinationAccount, double amount) {
+        if (this.withdraw(amount)) {
+            if (destinationAccount.deposit(amount)) {
+                return true;
+            } else {
+                // destination account busy, refund source account.
+                this.deposit(amount);
+            }
+        }
+ 
+        return false;
+    }
+ 
+    public static void main(String[] args) {
+        final BankAccount fooAccount = new BankAccount(1, 500d);
+        final BankAccount barAccount = new BankAccount(2, 500d);
+ 
+        new Thread(new Transaction(fooAccount, barAccount, 10d), "transaction-1").start();
+        new Thread(new Transaction(barAccount, fooAccount, 10d), "transaction-2").start();
+ 
+    }
+ 
+}
+class Transaction implements Runnable {
+    private BankAccount sourceAccount, destinationAccount;
+    private double amount;
+ 
+    Transaction(BankAccount sourceAccount, BankAccount destinationAccount, double amount) {
+        this.sourceAccount = sourceAccount;
+        this.destinationAccount = destinationAccount;
+        this.amount = amount;
+    }
+ 
+    public void run() {
+        while (!sourceAccount.tryTransfer(destinationAccount, amount))
+            continue;
+        System.out.printf("%s completed ", Thread.currentThread().getName());
+    }
+ 
+}
 ```
 Starvation
 
@@ -70,8 +203,95 @@ Now imagine you are a low-priority process and the pregnant women are higher pri
 
 Hope this illustration helps hehe
 
+```java
+public class BankAccount {
+    private double balance;
+    int id;
+ 
+    BankAccount(int id, double balance) {
+        this.id = id;
+        this.balance = balance;
+    }
+     
+    synchronized double getBalance() {
+        // Wait to simulate io like database access ...
+        try {Thread.sleep(100l);} catch (InterruptedException e) {}
+        return balance;
+    }
+     
+    synchronized void withdraw(double amount) {
+        balance -= amount;
+    }
+ 
+    synchronized void deposit(double amount) {
+        balance += amount;
+    }
+ 
+    synchronized void transfer(BankAccount to, double amount) {
+            withdraw(amount);
+            to.deposit(amount);
+    }
+ 
+    public static void main(String[] args) {
+        final BankAccount fooAccount = new BankAccount(1, 500d);
+        final BankAccount barAccount = new BankAccount(2, 500d);
+         
+        Thread balanceMonitorThread1 = new Thread(new BalanceMonitor(fooAccount), "BalanceMonitor");
+        Thread transactionThread1 = new Thread(new Transaction(fooAccount, barAccount, 250d), "Transaction-1");
+        Thread transactionThread2 = new Thread(new Transaction(fooAccount, barAccount, 250d), "Transaction-2");
+         
+        balanceMonitorThread1.setPriority(Thread.MAX_PRIORITY);
+        transactionThread1.setPriority(Thread.MIN_PRIORITY);
+        transactionThread2.setPriority(Thread.MIN_PRIORITY);
+         
+        // Start the monitor
+        balanceMonitorThread1.start();
+         
+        // And later, transaction threads tries to execute.
+        try {Thread.sleep(100l);} catch (InterruptedException e) {}
+        transactionThread1.start();
+        transactionThread2.start();
+ 
+    }
+ 
+}
+class BalanceMonitor implements Runnable {
+    private BankAccount account;
+    BalanceMonitor(BankAccount account) { this.account = account;}
+    boolean alreadyNotified = false;
+     
+    @Override
+    public void run() {
+        System.out.format("%s started execution%n", Thread.currentThread().getName());
+        while (true) {
+            if(account.getBalance() <= 0) {
+                // send email, or sms, clouds of smoke ...
+                break;
+            }
+        }
+        System.out.format("%s : account has gone too low, email sent, exiting.", Thread.currentThread().getName());
+    }
+     
+}
+class Transaction implements Runnable {
+    private BankAccount sourceAccount, destinationAccount;
+    private double amount;
+ 
+    Transaction(BankAccount sourceAccount, BankAccount destinationAccount, double amount) {
+        this.sourceAccount = sourceAccount;
+        this.destinationAccount = destinationAccount;
+        this.amount = amount;
+    }
+ 
+    public void run() {
+        System.out.format("%s started execution%n", Thread.currentThread().getName());
+        sourceAccount.transfer(destinationAccount, amount);
+        System.out.printf("%s completed execution%n", Thread.currentThread().getName());
+    }
+ 
+}
 
-Livelock
 
-A thread often acts in response to the action of another thread. If the other thread's action is also a response to the action of another thread, then livelock may result. As with deadlock, livelocked threads are unable to make further progress. However, the threads are not blocked — they are simply too busy responding to each other to resume work. This is comparable to two people attempting to pass each other in a corridor: Alphonse moves to his left to let Gaston pass, while Gaston moves to his right to let Alphonse pass. Seeing that they are still blocking each other, Alphone moves to his right, while Gaston moves to his left. They're still blocking each other, so...
+```
+
 
