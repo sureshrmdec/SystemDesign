@@ -1,4 +1,23 @@
 ```java
+
+Thread 1	Thread 2
+x = 1;	int r1 = y;
+y = 2;	int r2 = x;
+If no reorderings are performed, and the read of y in Thread 2 returns the value 2, 
+then the subsequent read of x should return the value 1, because the write to x was performed before the write to y. 
+However, if the two writes are reordered, then the read of y can return the value 2, and the read of x can return the value 0.
+happens-before
+
+从JDK5开始，java使用新的JSR -133内存模型（本文除非特别说明，针对的都是JSR- 133内存模型）。JSR-133提出了happens-before的概念，
+通过这个概念来阐述操作之间的内存可见性。如果一个操作执行的结果需要对另一个操作可见，那么这两个操作之间必须存在happens-before关系。
+这里提到的两个操作既可以是在一个线程之内，也可以是在不同线程之间。 与程序员密切相关的happens-before规则如下：
+
+程序顺序规则：一个线程中的每个操作，happens- before 于该线程中的任意后续操作。
+监视器锁规则：对一个监视器锁的解锁，happens- before 于随后对这个监视器锁的加锁。
+volatile变量规则：对一个volatile域的写，happens- before 于任意后续对这个volatile域的读。
+传递性：如果A happens- before B，且B happens- before C，那么A happens- before C。
+
+
 Sequential Consistency（下文简称SC）是Java内存模型和即将到来的C++0x内存模型的一个关键概念，
 它确保了你的多线程程序在执行时的正确性。Cache Coherence（下文简称CC）是多核CPU在硬件中已经实现的一种机制，
 简单的说，它确保了对一个内存地址的任何读操作一定会返回那个内存地址最新的（被写入）的值。
